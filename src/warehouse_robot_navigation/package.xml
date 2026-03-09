@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>warehouse_robot_navigation</name>
+  <version>0.1.0</version>
+  <description>Nav2 params, maps, and EKF config</description>
+  <maintainer email="you@email.com">Your Name</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>warehouse_robot_gazebo</depend>
+  <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>slam_toolbox</exec_depend>
+  <exec_depend>robot_localization</exec_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

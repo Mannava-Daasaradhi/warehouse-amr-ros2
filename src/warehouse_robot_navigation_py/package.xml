@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>warehouse_robot_navigation_py</name>
+  <version>0.1.0</version>
+  <description>Python mission executor node</description>
+  <maintainer email="you@email.com">Your Name</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_python</buildtool_depend>
+  <depend>warehouse_robot_navigation</depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>nav2_simple_commander</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <export><build_type>ament_python</build_type></export>
+</package>
