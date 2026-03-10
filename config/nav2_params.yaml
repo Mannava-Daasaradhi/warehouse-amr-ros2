@@ -1,20 +1,16 @@
 # nav2_params.yaml
 # ─────────────────────────────────────────────────────────────────────────────
-# Nav2 configuration for warehouse AMR
-# ROS 2 Jazzy Jalisco | Nav2 1.3+
-#
-# Planner  : NavFn (global)
-# Controller: Regulated Pure Pursuit (RPP) — ideal for diff-drive in aisles
-# Costmaps  : Tuned for a warehouse with narrow aisles (~1.2m)
+# Nav2 + SLAM Toolbox configuration for warehouse AMR
+# ROS 2 Jazzy | Nav2 1.3+
 # ─────────────────────────────────────────────────────────────────────────────
 
 amcl:
   ros__parameters:
     use_sim_time: true
-    alpha1: 0.2          # rotation noise from rotation
-    alpha2: 0.2          # rotation noise from translation
-    alpha3: 0.2          # translation noise from translation
-    alpha4: 0.2          # translation noise from rotation
+    alpha1: 0.2
+    alpha2: 0.2
+    alpha3: 0.2
+    alpha4: 0.2
     alpha5: 0.1
     base_frame_id: "base_footprint"
     beam_skip_distance: 0.5
@@ -54,7 +50,7 @@ amcl:
       x: 0.5
       y: 0.5
       z: 0.0
-      yaw: -1.5707963   # -90° — facing down the main aisle from dock
+      yaw: -1.5707963
 
 bt_navigator:
   ros__parameters:
@@ -71,7 +67,6 @@ bt_navigator:
       plugin: "nav2_bt_navigator::NavigateToPoseNavigator"
     navigate_through_poses:
       plugin: "nav2_bt_navigator::NavigateThroughPosesNavigator"
-    # Default BT XML — shipped with Nav2, handles replanning and recovery
     default_nav_to_pose_bt_xml: ""
     default_nav_through_poses_bt_xml: ""
 
@@ -81,7 +76,7 @@ controller_server:
     controller_frequency: 20.0
     costmap_update_timeout: 0.30
     min_x_velocity_threshold: 0.001
-    min_y_velocity_threshold: 0.5     # large value disables y-vel check (diff drive)
+    min_y_velocity_threshold: 0.5
     min_theta_velocity_threshold: 0.001
     failure_tolerance: 0.3
     progress_checker_plugins: ["progress_checker"]
@@ -100,11 +95,9 @@ controller_server:
       yaw_goal_tolerance: 0.1
       stateful: true
 
-    # ── Regulated Pure Pursuit (RPP) ──────────────────────────────────────
-    # Excellent for long straight warehouse aisles
     FollowPath:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
-      desired_linear_vel: 0.8          # m/s — comfortable warehouse speed
+      desired_linear_vel: 0.8
       lookahead_dist: 0.6
       min_lookahead_dist: 0.3
       max_lookahead_dist: 0.9
@@ -123,7 +116,7 @@ controller_server:
       regulated_linear_scaling_min_radius: 0.9
       regulated_linear_scaling_min_speed: 0.25
       use_rotate_to_heading: true
-      allow_reversing: false           # disable reversing for safety in aisles
+      allow_reversing: false
       rotate_to_heading_min_angle: 0.785
       max_angular_accel: 3.2
       max_robot_pose_search_dist: 10.0
@@ -144,7 +137,6 @@ local_costmap:
       width: 5
       height: 5
       resolution: 0.05
-      # Robot footprint — adjust to your chassis dimensions (length x width)
       footprint: "[[0.30, 0.25], [0.30, -0.25], [-0.30, -0.25], [-0.30, 0.25]]"
       footprint_padding: 0.03
       plugins: ["voxel_layer", "inflation_layer"]
@@ -171,7 +163,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.45        # tight for narrow aisles
+        inflation_radius: 0.45
       always_send_full_costmap: true
 
 global_costmap:
@@ -182,7 +174,6 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_link
-      # Must match local footprint
       footprint: "[[0.30, 0.25], [0.30, -0.25], [-0.30, -0.25], [-0.30, 0.25]]"
       footprint_padding: 0.03
       resolution: 0.05
@@ -217,7 +208,7 @@ global_costmap:
 map_server:
   ros__parameters:
     use_sim_time: true
-    yaml_filename: "warehouse_map.yaml"   # path resolved via launch arg
+    yaml_filename: "warehouse_map.yaml"
     topic_name: "map"
     frame_id: "map"
 
@@ -237,7 +228,7 @@ planner_server:
     GridBased:
       plugin: "nav2_navfn_planner::NavfnPlanner"
       tolerance: 0.5
-      use_astar: false    # Dijkstra — more reliable in symmetric warehouse grids
+      use_astar: false
       allow_unknown: true
 
 smoother_server:
@@ -288,7 +279,7 @@ waypoint_follower:
     wait_at_waypoint:
       plugin: "nav2_waypoint_follower::WaitAtWaypoint"
       enabled: true
-      waypoint_pause_duration: 200   # ms to pause at each waypoint
+      waypoint_pause_duration: 200
 
 velocity_smoother:
   ros__parameters:
@@ -296,7 +287,7 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: false
     feedback: "OPEN_LOOP"
-    max_velocity: [0.8, 0.0, 2.0]   # [vx, vy, vtheta]
+    max_velocity: [0.8, 0.0, 2.0]
     min_velocity: [-0.8, 0.0, -2.0]
     max_accel: [2.5, 0.0, 3.2]
     max_decel: [-2.5, 0.0, -3.2]
@@ -348,7 +339,7 @@ slam_toolbox:
     map_frame: map
     base_frame: base_footprint
     scan_topic: /scan
-    mode: mapping   # switch to 'localization' when using a pre-built map
+    mode: mapping
     debug_logging: false
     throttle_scans: 1
     transform_publish_period: 0.02
@@ -388,20 +379,3 @@ slam_toolbox:
     minimum_angle_penalty: 0.9
     minimum_distance_penalty: 0.5
     use_response_expansion: true
-
-docking_server:
-  ros__parameters:
-    use_sim_time: true
-    controller_frequency: 50.0
-    initial_perception_timeout: 5.0
-    wait_charge_timeout: 5.0
-    dock_approach_timeout: 30.0
-    undock_linear_tolerance: 0.05
-    undock_angular_tolerance: 0.1
-    max_retries: 3
-    base_frame: base_link
-    fixed_frame: odom
-    dock_backwards: false
-    dock_prestaging_tolerance: 0.5
-    dock_plugins: []
-    navigator_bt_xml: ""

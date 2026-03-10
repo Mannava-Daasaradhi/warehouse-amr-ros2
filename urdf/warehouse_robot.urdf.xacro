@@ -1,52 +1,63 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="warehouse_amr">
 
-  <!-- controllers_yaml is passed in by the launch file as an absolute path -->
+  <!--
+    warehouse_robot.urdf.xacro
+    ──────────────────────────
+    Follows professor's br2_robodog style:
+      · All Gazebo plugins embedded directly in URDF (no separate files)
+      · Clean xacro macros for repeated geometry
+      · controllers_yaml passed from launch file as xacro arg
+  -->
+
+  <!-- controllers_yaml absolute path passed in by sim.launch.py -->
   <xacro:arg name="controllers_yaml" default=""/>
 
   <!-- ==================== PARAMETERS ==================== -->
-  <xacro:property name="base_length"    value="0.60"/>
-  <xacro:property name="base_width"     value="0.50"/>
-  <xacro:property name="base_height"    value="0.25"/>
-  <xacro:property name="base_mass"      value="25.0"/>
-  <xacro:property name="wheel_radius"   value="0.10"/>
-  <xacro:property name="wheel_width"    value="0.05"/>
-  <xacro:property name="wheel_mass"     value="1.5"/>
-  <xacro:property name="wheel_sep"      value="0.52"/>
-  <xacro:property name="caster_radius"  value="0.04"/>
-  <xacro:property name="caster_mass"    value="0.5"/>
-  <xacro:property name="lidar_mass"     value="0.3"/>
-  <xacro:property name="imu_mass"       value="0.05"/>
+  <xacro:property name="base_length"   value="0.60"/>
+  <xacro:property name="base_width"    value="0.50"/>
+  <xacro:property name="base_height"   value="0.25"/>
+  <xacro:property name="base_mass"     value="25.0"/>
+  <xacro:property name="wheel_radius"  value="0.10"/>
+  <xacro:property name="wheel_width"   value="0.05"/>
+  <xacro:property name="wheel_mass"    value="1.5"/>
+  <xacro:property name="wheel_sep"     value="0.52"/>
+  <xacro:property name="caster_radius" value="0.04"/>
+  <xacro:property name="caster_mass"   value="0.5"/>
+  <xacro:property name="lidar_mass"    value="0.3"/>
+  <xacro:property name="imu_mass"      value="0.05"/>
 
   <!-- ==================== INERTIA MACROS ==================== -->
+  <!-- Professor uses named inertia macros — same pattern here -->
   <xacro:macro name="box_inertia" params="m x y z">
     <inertial>
       <mass value="${m}"/>
-      <inertia ixx="${m*(y*y+z*z)/12}" ixy="0" ixz="0"
-               iyy="${m*(x*x+z*z)/12}" iyz="0"
-               izz="${m*(x*x+y*y)/12}"/>
+      <inertia ixx="${(1.0/12.0)*m*(y*y+z*z)}" ixy="0.0" ixz="0.0"
+               iyy="${(1.0/12.0)*m*(x*x+z*z)}" iyz="0.0"
+               izz="${(1.0/12.0)*m*(x*x+y*y)}"/>
     </inertial>
   </xacro:macro>
 
   <xacro:macro name="cylinder_inertia" params="m r h">
     <inertial>
       <mass value="${m}"/>
-      <inertia ixx="${m*(3*r*r+h*h)/12}" ixy="0" ixz="0"
-               iyy="${m*(3*r*r+h*h)/12}" iyz="0"
-               izz="${m*r*r/2}"/>
+      <inertia ixx="${(1.0/12.0)*m*(3*r*r+h*h)}" ixy="0.0" ixz="0.0"
+               iyy="${(1.0/12.0)*m*(3*r*r+h*h)}" iyz="0.0"
+               izz="${(1.0/2.0)*m*r*r}"/>
     </inertial>
   </xacro:macro>
 
   <xacro:macro name="sphere_inertia" params="m r">
     <inertial>
       <mass value="${m}"/>
-      <inertia ixx="${2*m*r*r/5}" ixy="0" ixz="0"
-               iyy="${2*m*r*r/5}" iyz="0"
-               izz="${2*m*r*r/5}"/>
+      <inertia ixx="${(2.0/5.0)*m*r*r}" ixy="0.0" ixz="0.0"
+               iyy="${(2.0/5.0)*m*r*r}" iyz="0.0"
+               izz="${(2.0/5.0)*m*r*r}"/>
     </inertial>
   </xacro:macro>
 
-  <!-- ==================== WHEEL MACRO ==================== -->
+  <!-- ==================== DRIVE WHEEL MACRO ==================== -->
+  <!-- Professor uses macros with prefix + reflect params — same here -->
   <xacro:macro name="drive_wheel" params="prefix reflect">
     <link name="${prefix}_wheel_link">
       <visual>
@@ -60,6 +71,7 @@
       </collision>
       <xacro:cylinder_inertia m="${wheel_mass}" r="${wheel_radius}" h="${wheel_width}"/>
     </link>
+
     <joint name="${prefix}_wheel_joint" type="continuous">
       <parent link="base_link"/>
       <child  link="${prefix}_wheel_link"/>
@@ -67,6 +79,13 @@
       <axis xyz="0 1 0"/>
       <dynamics damping="0.1" friction="0.5"/>
     </joint>
+
+    <!-- Gazebo color — professor's per-link material pattern -->
+    <gazebo reference="${prefix}_wheel_link">
+      <material>Gazebo/DarkGrey</material>
+      <mu1>0.8</mu1>
+      <mu2>0.8</mu2>
+    </gazebo>
   </xacro:macro>
 
   <!-- ==================== CASTER MACRO ==================== -->
@@ -81,11 +100,19 @@
       </collision>
       <xacro:sphere_inertia m="${caster_mass}" r="${caster_radius}"/>
     </link>
+
     <joint name="${prefix}_caster_joint" type="fixed">
       <parent link="base_link"/>
       <child  link="${prefix}_caster_link"/>
       <origin xyz="${x_pos} 0 ${-wheel_radius + caster_radius}" rpy="0 0 0"/>
     </joint>
+
+    <!-- Low friction casters roll freely -->
+    <gazebo reference="${prefix}_caster_link">
+      <material>Gazebo/Grey</material>
+      <mu1>0.01</mu1>
+      <mu2>0.01</mu2>
+    </gazebo>
   </xacro:macro>
 
   <!-- ==================== BASE ==================== -->
@@ -110,10 +137,15 @@
     <xacro:box_inertia m="${base_mass}" x="${base_length}" y="${base_width}" z="${base_height}"/>
   </link>
 
+  <gazebo reference="base_link">
+    <material>Gazebo/Orange</material>
+  </gazebo>
+
+  <!-- Instantiate wheels and casters using macros -->
   <xacro:drive_wheel prefix="left"  reflect="1"/>
   <xacro:drive_wheel prefix="right" reflect="-1"/>
-  <xacro:caster prefix="front" x_pos="${base_length/2 - caster_radius}"/>
-  <xacro:caster prefix="rear"  x_pos="${-(base_length/2 - caster_radius)}"/>
+  <xacro:caster prefix="front" x_pos="${base_length/2  - caster_radius}"/>
+  <xacro:caster prefix="rear"  x_pos="${-base_length/2 + caster_radius}"/>
 
   <!-- ==================== LIDAR ==================== -->
   <link name="lidar_link">
@@ -136,45 +168,9 @@
     <origin xyz="${base_length/2 - 0.07} 0 ${base_height + 0.035}" rpy="0 0 0"/>
   </joint>
 
-  <!-- ==================== IMU ==================== -->
-  <link name="imu_link">
-    <inertial>
-      <mass value="${imu_mass}"/>
-      <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
-    </inertial>
-  </link>
-
-  <joint name="imu_joint" type="fixed">
-    <parent link="base_link"/>
-    <child  link="imu_link"/>
-    <origin xyz="0 0 ${base_height/2}" rpy="0 0 0"/>
-  </joint>
-
-  <!-- ==================== ros2_control ==================== -->
-  <ros2_control name="warehouse_amr_hardware" type="system">
-    <hardware>
-      <plugin>gz_ros2_control/GazeboSimSystem</plugin>
-    </hardware>
-    <joint name="left_wheel_joint">
-      <command_interface name="velocity">
-        <param name="min">-10</param>
-        <param name="max">10</param>
-      </command_interface>
-      <state_interface name="position"/>
-      <state_interface name="velocity"/>
-    </joint>
-    <joint name="right_wheel_joint">
-      <command_interface name="velocity">
-        <param name="min">-10</param>
-        <param name="max">10</param>
-      </command_interface>
-      <state_interface name="position"/>
-      <state_interface name="velocity"/>
-    </joint>
-  </ros2_control>
-
-  <!-- ==================== SENSOR PLUGINS ==================== -->
   <gazebo reference="lidar_link">
+    <material>Gazebo/Black</material>
+    <!-- LiDAR sensor plugin — embedded directly like professor's camera sensor -->
     <sensor name="lidar" type="gpu_lidar">
       <update_rate>10</update_rate>
       <topic>/scan</topic>
@@ -200,7 +196,22 @@
     </sensor>
   </gazebo>
 
+  <!-- ==================== IMU ==================== -->
+  <link name="imu_link">
+    <inertial>
+      <mass value="${imu_mass}"/>
+      <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
+    </inertial>
+  </link>
+
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="imu_link"/>
+    <origin xyz="0 0 ${base_height/2}" rpy="0 0 0"/>
+  </joint>
+
   <gazebo reference="imu_link">
+    <!-- IMU sensor plugin — embedded directly, same as professor's camera sensor pattern -->
     <sensor name="imu_sensor" type="imu">
       <update_rate>100</update_rate>
       <topic>/imu/data_raw</topic>
@@ -221,7 +232,35 @@
     </sensor>
   </gazebo>
 
-  <!-- ==================== GZ ROS2 CONTROL PLUGIN ==================== -->
+  <!-- ==================== ros2_control ==================== -->
+  <ros2_control name="warehouse_amr_hardware" type="system">
+    <hardware>
+      <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+    </hardware>
+    <joint name="left_wheel_joint">
+      <command_interface name="velocity">
+        <param name="min">-10</param>
+        <param name="max">10</param>
+      </command_interface>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="right_wheel_joint">
+      <command_interface name="velocity">
+        <param name="min">-10</param>
+        <param name="max">10</param>
+      </command_interface>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
+
+  <!-- ==================== GZ ros2_control PLUGIN ==================== -->
+  <!--
+    Professor embeds all plugins directly in the URDF.
+    The gz_ros2_control plugin loads the controller_manager and reads
+    controllers_yaml (absolute path passed from sim.launch.py via xacro arg).
+  -->
   <gazebo>
     <plugin filename="gz_ros2_control-system"
             name="gz_ros2_control::GazeboSimROS2ControlPlugin">
@@ -229,6 +268,15 @@
       <ros>
         <remapping>~/robot_description:=/robot_description</remapping>
       </ros>
+    </plugin>
+  </gazebo>
+
+  <!-- ==================== JOINT STATE PUBLISHER PLUGIN ==================== -->
+  <!-- Professor uses gz-sim-joint-state-publisher-system — same here -->
+  <gazebo>
+    <plugin filename="gz-sim-joint-state-publisher-system"
+            name="gz::sim::systems::JointStatePublisher">
+      <topic>joint_states</topic>
     </plugin>
   </gazebo>
 
