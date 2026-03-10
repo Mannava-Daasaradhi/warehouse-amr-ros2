@@ -1,9 +1,7 @@
-# Run SLAM first, drive around, then save your map with:
-#   ros2 run nav2_map_server map_saver_cli -f ~/warehouse_map
-# Copy the resulting .pgm + .yaml here and launch with slam:=false
 image: warehouse_map.pgm
-resolution: 0.05
-origin: [0.0, 0.0, 0.0]
+mode: trinary
+resolution: 0.050
+origin: [-14.528, -5.250, 0]
 negate: 0
 occupied_thresh: 0.65
-free_thresh: 0.25
+free_thresh: 0.196
