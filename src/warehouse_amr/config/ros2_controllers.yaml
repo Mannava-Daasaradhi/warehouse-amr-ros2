@@ -37,7 +37,7 @@ diff_drive_controller:
         min_velocity: -0.8
         has_acceleration_limits: true
         max_acceleration: 2.5
-        max_deceleration: 2.5
+        max_deceleration: -2.5
 
     angular:
       z:
@@ -46,4 +46,4 @@ diff_drive_controller:
         min_velocity: -2.0
         has_acceleration_limits: true
         max_acceleration: 3.2
-        max_deceleration: 3.2
+        max_deceleration: -3.2

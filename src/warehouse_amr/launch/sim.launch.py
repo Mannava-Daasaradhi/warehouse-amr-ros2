@@ -91,7 +91,7 @@ def generate_launch_description():
         arguments=[
             '-name',  'warehouse_amr',
             '-topic', '/robot_description',
-            '-x', '0.5', '-y', '0.5', '-z', '0.01', '-Y', '-1.5707963',
+            '-x', '0.1', '-y', '0.5', '-z', '0.01', '-Y', '-1.5707963',
         ],
     )
 
@@ -120,7 +120,18 @@ def generate_launch_description():
         output='screen',
         parameters=[{'use_sim_time': True}],
     )
-
+    # ── Twist → TwistStamped relay (required for Jazzy ros2_controllers 4.x) ──
+    twist_stamper = Node(
+        package='twist_stamper',
+        executable='twist_stamper',
+        name='twist_stamper',
+        output='screen',
+        parameters=[{'use_sim_time': True, 'frame_id': 'base_link'}],
+        remappings=[
+            ('/cmd_vel_in', '/cmd_vel'),
+            ('/cmd_vel_out', '/diff_drive_controller/cmd_vel'),
+        ],
+    )
     # ── ros2_control spawners (delayed 15s — Gazebo needs time to init) ────
     joint_state_broadcaster = Node(
         package='controller_manager',
@@ -129,10 +140,13 @@ def generate_launch_description():
         output='screen',
     )
     diff_drive_controller = Node(
-        package='controller_manager',
-        executable='spawner',
-        arguments=['diff_drive_controller', '--controller-manager', '/controller_manager'],
-        output='screen',
+        package="controller_manager",
+        executable="spawner",
+        arguments=["diff_drive_controller",
+                "--controller-manager", "/controller_manager",
+                "--ros-args", "--remap",
+                "/diff_drive_controller/cmd_vel:=/cmd_vel"],
+        output="screen",
     )
     controllers_delayed = TimerAction(
         period=15.0,

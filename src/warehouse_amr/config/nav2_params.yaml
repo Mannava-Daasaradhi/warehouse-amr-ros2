@@ -340,6 +340,7 @@ slam_toolbox:
     base_frame: base_footprint
     scan_topic: /scan
     mode: mapping
+    map_start_pose: [0.0, 0.0, 0.0]
     debug_logging: false
     throttle_scans: 1
     transform_publish_period: 0.02
