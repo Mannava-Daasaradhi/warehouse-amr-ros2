@@ -4,31 +4,71 @@
   <!--
     warehouse_robot.urdf.xacro
     ──────────────────────────
+    URDF (Unified Robot Description Format) + xacro macros for the Warehouse AMR.
+
+    URDF describes the robot's physical structure:
+      · Links  = rigid bodies (chassis, wheels, sensors)
+      · Joints = connections between links (fixed, continuous, revolute, etc.)
+
+    Xacro is a macro preprocessor that expands this file into plain URDF XML.
+    Benefits: reusable macros for repeated geometry, named variables for dimensions.
+    Processed at launch time by sim.launch.py via xacro.process_file().
+
     Follows professor's br2_robodog style:
       · All Gazebo plugins embedded directly in URDF (no separate files)
       · Clean xacro macros for repeated geometry
       · controllers_yaml passed from launch file as xacro arg
+
+    Robot layout (top view):
+        [front_caster]
+        [lidar         ]
+        [    base_link  ]
+        [left]    [right]   ← drive wheels
+        [rear_caster   ]
+
+    TF tree produced by this URDF:
+      base_footprint
+       └── base_link
+            ├── left_wheel_link   (continuous joint — spins when driving)
+            ├── right_wheel_link  (continuous joint — spins when driving)
+            ├── front_caster_link (fixed joint — passive ball caster)
+            ├── rear_caster_link  (fixed joint — passive ball caster)
+            ├── lidar_link        (fixed joint — 360° LiDAR sensor)
+            └── imu_link          (fixed joint — IMU sensor)
   -->
 
-  <!-- controllers_yaml absolute path passed in by sim.launch.py -->
+  <!-- controllers_yaml: absolute path to ros2_controllers.yaml, passed in by sim.launch.py
+       via: xacro.process_file(xacro_file, mappings={'controllers_yaml': path}) -->
   <xacro:arg name="controllers_yaml" default=""/>
 
   <!-- ==================== PARAMETERS ==================== -->
-  <xacro:property name="base_length"   value="0.60"/>
-  <xacro:property name="base_width"    value="0.50"/>
-  <xacro:property name="base_height"   value="0.25"/>
-  <xacro:property name="base_mass"     value="25.0"/>
-  <xacro:property name="wheel_radius"  value="0.10"/>
-  <xacro:property name="wheel_width"   value="0.05"/>
-  <xacro:property name="wheel_mass"    value="1.5"/>
-  <xacro:property name="wheel_sep"     value="0.52"/>
-  <xacro:property name="caster_radius" value="0.04"/>
-  <xacro:property name="caster_mass"   value="0.5"/>
-  <xacro:property name="lidar_mass"    value="0.3"/>
-  <xacro:property name="imu_mass"      value="0.05"/>
+  <!-- All dimensions in metres, masses in kilograms.
+       These are referenced as ${variable_name} throughout the file.
+       Changing a value here automatically updates every formula that uses it. -->
+  <xacro:property name="base_length"   value="0.60"/>  <!-- chassis front-to-back length -->
+  <xacro:property name="base_width"    value="0.50"/>  <!-- chassis left-to-right width -->
+  <xacro:property name="base_height"   value="0.25"/>  <!-- chassis top-to-bottom height -->
+  <xacro:property name="base_mass"     value="25.0"/>  <!-- chassis mass (kg) — affects physics simulation -->
+  <xacro:property name="wheel_radius"  value="0.10"/>  <!-- drive wheel radius; determines ground clearance -->
+  <xacro:property name="wheel_width"   value="0.05"/>  <!-- drive wheel thickness -->
+  <xacro:property name="wheel_mass"    value="1.5"/>   <!-- mass of each drive wheel -->
+  <xacro:property name="wheel_sep"     value="0.52"/>  <!-- distance between wheel centres; MUST match ros2_controllers.yaml -->
+  <xacro:property name="caster_radius" value="0.04"/>  <!-- passive caster ball radius -->
+  <xacro:property name="caster_mass"   value="0.5"/>   <!-- mass of each caster -->
+  <xacro:property name="lidar_mass"    value="0.3"/>   <!-- LiDAR unit mass -->
+  <xacro:property name="imu_mass"      value="0.05"/>  <!-- IMU unit mass -->
 
   <!-- ==================== INERTIA MACROS ==================== -->
-  <!-- Professor uses named inertia macros — same pattern here -->
+  <!--
+    Correct inertia tensors are required for realistic Gazebo physics.
+    Inertia is a 3×3 symmetric tensor; for axis-aligned symmetric shapes
+    all off-diagonal terms (ixy, ixz, iyz) are zero.
+
+    Professor uses named inertia macros — same pattern here.
+  -->
+
+  <!-- Box inertia macro — used for the chassis (base_link).
+       Formulas for a uniform solid box: Ixx=(1/12)m(y²+z²), Iyy=(1/12)m(x²+z²), Izz=(1/12)m(x²+y²) -->
   <xacro:macro name="box_inertia" params="m x y z">
     <inertial>
       <mass value="${m}"/>
@@ -38,6 +78,8 @@
     </inertial>
   </xacro:macro>
 
+  <!-- Cylinder inertia macro — used for the drive wheels.
+       Formulas for a solid cylinder: Ixx=Iyy=(1/12)m(3r²+h²), Izz=(1/2)mr² -->
   <xacro:macro name="cylinder_inertia" params="m r h">
     <inertial>
       <mass value="${m}"/>
@@ -47,6 +89,8 @@
     </inertial>
   </xacro:macro>
 
+  <!-- Sphere inertia macro — used for the passive casters.
+       Formula for a solid sphere: Ixx=Iyy=Izz=(2/5)mr² -->
   <xacro:macro name="sphere_inertia" params="m r">
     <inertial>
       <mass value="${m}"/>
@@ -57,10 +101,20 @@
   </xacro:macro>
 
   <!-- ==================== DRIVE WHEEL MACRO ==================== -->
-  <!-- Professor uses macros with prefix + reflect params — same here -->
+  <!--
+    Creates one drive wheel link + joint.
+    Called twice: once for 'left' (reflect=1) and once for 'right' (reflect=-1).
+
+    Parameters:
+      prefix  = "left" or "right" — used to name the link and joint
+      reflect = 1 (left side, +Y) or -1 (right side, -Y)
+
+    Professor uses macros with prefix + reflect params — same here.
+  -->
   <xacro:macro name="drive_wheel" params="prefix reflect">
     <link name="${prefix}_wheel_link">
       <visual>
+        <!-- rpy="${pi/2} 0 0" rotates the cylinder so its axis is along Y (horizontal) -->
         <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
         <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
         <material name="dark_grey"><color rgba="0.2 0.2 0.2 1.0"/></material>
@@ -72,23 +126,35 @@
       <xacro:cylinder_inertia m="${wheel_mass}" r="${wheel_radius}" h="${wheel_width}"/>
     </link>
 
+    <!-- continuous joint = the wheel rotates freely with no angle limit -->
     <joint name="${prefix}_wheel_joint" type="continuous">
       <parent link="base_link"/>
       <child  link="${prefix}_wheel_link"/>
+      <!-- reflect * wheel_sep/2: left wheel at +0.26 m, right wheel at -0.26 m in Y -->
       <origin xyz="0 ${reflect * wheel_sep/2} 0" rpy="0 0 0"/>
-      <axis xyz="0 1 0"/>
-      <dynamics damping="0.1" friction="0.5"/>
+      <axis xyz="0 1 0"/>   <!-- wheel rotates about the Y axis -->
+      <dynamics damping="0.1" friction="0.5"/>  <!-- small damping and friction for stable simulation -->
     </joint>
 
-    <!-- Gazebo color — professor's per-link material pattern -->
+    <!-- Gazebo material and friction for this wheel link -->
+    <!-- Professor's per-link material pattern -->
     <gazebo reference="${prefix}_wheel_link">
       <material>Gazebo/DarkGrey</material>
-      <mu1>0.8</mu1>
-      <mu2>0.8</mu2>
+      <mu1>0.8</mu1>  <!-- friction coefficient in primary direction (along wheel rolling axis) -->
+      <mu2>0.8</mu2>  <!-- friction coefficient in secondary direction (lateral) -->
     </gazebo>
   </xacro:macro>
 
   <!-- ==================== CASTER MACRO ==================== -->
+  <!--
+    Creates one passive caster link + fixed joint.
+    Casters support the chassis but are not driven.
+    Low friction (mu1=mu2=0.01) lets them slide freely, simulating a ball caster.
+
+    Parameters:
+      prefix = "front" or "rear"
+      x_pos  = X offset from base_link (positive = forward)
+  -->
   <xacro:macro name="caster" params="prefix x_pos">
     <link name="${prefix}_caster_link">
       <visual>
@@ -101,34 +167,47 @@
       <xacro:sphere_inertia m="${caster_mass}" r="${caster_radius}"/>
     </link>
 
+    <!-- fixed joint — caster does not have a motor; physics engine simulates its rolling -->
     <joint name="${prefix}_caster_joint" type="fixed">
       <parent link="base_link"/>
       <child  link="${prefix}_caster_link"/>
+      <!-- z = -wheel_radius + caster_radius: places the caster sphere touching the floor
+           (same ground plane as the drive wheels) -->
       <origin xyz="${x_pos} 0 ${-wheel_radius + caster_radius}" rpy="0 0 0"/>
     </joint>
 
-    <!-- Low friction casters roll freely -->
+    <!-- Low friction so casters slide freely rather than rolling with resistance -->
     <gazebo reference="${prefix}_caster_link">
       <material>Gazebo/Grey</material>
-      <mu1>0.01</mu1>
+      <mu1>0.01</mu1>  <!-- near-zero friction for free sliding -->
       <mu2>0.01</mu2>
     </gazebo>
   </xacro:macro>
 
   <!-- ==================== BASE ==================== -->
-  <link name="base_footprint"/>
+  <!--
+    base_footprint: the robot's 2-D ground projection.
+      · Used by Nav2 and the EKF as the robot's planning reference frame.
+      · Has no visual or collision geometry (it's just a coordinate frame).
 
+    base_link: the physical chassis, raised above base_footprint by wheel_radius
+      so the wheels touch the floor.
+  -->
+  <link name="base_footprint"/>  <!-- 2-D ground projection; no geometry needed -->
+
+  <!-- Fixed joint lifts base_link by wheel_radius (0.10 m) above the floor -->
   <joint name="base_footprint_joint" type="fixed">
     <parent link="base_footprint"/>
     <child  link="base_link"/>
-    <origin xyz="0 0 ${wheel_radius}" rpy="0 0 0"/>
+    <origin xyz="0 0 ${wheel_radius}" rpy="0 0 0"/>  <!-- z = wheel_radius: chassis sits on top of wheels -->
   </joint>
 
   <link name="base_link">
     <visual>
+      <!-- origin z = base_height/2: visual is centred at mid-height of the chassis -->
       <origin xyz="0 0 ${base_height/2}" rpy="0 0 0"/>
       <geometry><box size="${base_length} ${base_width} ${base_height}"/></geometry>
-      <material name="orange"><color rgba="0.95 0.55 0.1 1.0"/></material>
+      <material name="orange"><color rgba="0.95 0.55 0.1 1.0"/></material>  <!-- warehouse AMR orange -->
     </visual>
     <collision>
       <origin xyz="0 0 ${base_height/2}" rpy="0 0 0"/>
@@ -138,19 +217,26 @@
   </link>
 
   <gazebo reference="base_link">
-    <material>Gazebo/Orange</material>
+    <material>Gazebo/Orange</material>  <!-- Gazebo visual colour (overrides URDF material in Gazebo) -->
   </gazebo>
 
-  <!-- Instantiate wheels and casters using macros -->
-  <xacro:drive_wheel prefix="left"  reflect="1"/>
-  <xacro:drive_wheel prefix="right" reflect="-1"/>
-  <xacro:caster prefix="front" x_pos="${base_length/2  - caster_radius}"/>
-  <xacro:caster prefix="rear"  x_pos="${-base_length/2 + caster_radius}"/>
+  <!-- Instantiate drive wheels using the macro (creates left_wheel and right_wheel links + joints) -->
+  <xacro:drive_wheel prefix="left"  reflect="1"/>   <!-- left wheel: +Y side of robot -->
+  <xacro:drive_wheel prefix="right" reflect="-1"/>  <!-- right wheel: -Y side of robot -->
+
+  <!-- Instantiate passive casters (front and rear) using the macro -->
+  <xacro:caster prefix="front" x_pos="${base_length/2  - caster_radius}"/>  <!-- front edge -->
+  <xacro:caster prefix="rear"  x_pos="${-base_length/2 + caster_radius}"/>  <!-- rear edge -->
 
   <!-- ==================== LIDAR ==================== -->
+  <!--
+    360° LiDAR sensor mounted at the front-top of the chassis.
+    Publishes sensor_msgs/LaserScan on /scan at 10 Hz.
+    Used by SLAM Toolbox (mapping), AMCL (localisation), and Nav2 costmaps (obstacle avoidance).
+  -->
   <link name="lidar_link">
     <visual>
-      <geometry><cylinder radius="0.05" length="0.07"/></geometry>
+      <geometry><cylinder radius="0.05" length="0.07"/></geometry>  <!-- small cylinder = LiDAR housing -->
       <material name="black"><color rgba="0.1 0.1 0.1 1.0"/></material>
     </visual>
     <collision>
@@ -158,72 +244,91 @@
     </collision>
     <inertial>
       <mass value="${lidar_mass}"/>
-      <inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001"/>
+      <inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001"/>  <!-- tiny inertia for light sensor -->
     </inertial>
   </link>
 
+  <!-- Fixed joint: LiDAR is rigidly mounted (does not rotate independently) -->
   <joint name="lidar_joint" type="fixed">
     <parent link="base_link"/>
     <child  link="lidar_link"/>
+    <!-- Mounted at the forward top of chassis:
+         x = base_length/2 - 0.07 (near front edge)
+         z = base_height + 0.035  (above the chassis top surface) -->
     <origin xyz="${base_length/2 - 0.07} 0 ${base_height + 0.035}" rpy="0 0 0"/>
   </joint>
 
   <gazebo reference="lidar_link">
     <material>Gazebo/Black</material>
-    <!-- LiDAR sensor plugin — embedded directly like professor's camera sensor -->
+    <!-- LiDAR sensor plugin — embedded directly like professor's camera sensor.
+         This is a Gazebo sensor, not a ROS node; the gz_ros_bridge will forward
+         its output to the /scan ROS topic. -->
     <sensor name="lidar" type="gpu_lidar">
-      <update_rate>10</update_rate>
-      <topic>/scan</topic>
-      <gz_frame_id>lidar_link</gz_frame_id>
+      <update_rate>10</update_rate>          <!-- 10 Hz = 10 full 360° scans per second -->
+      <topic>/scan</topic>                   <!-- Gazebo internal topic (bridged to ROS by gz_ros_bridge) -->
+      <gz_frame_id>lidar_link</gz_frame_id>  <!-- TF frame the scan is referenced to -->
       <lidar>
         <scan>
           <horizontal>
-            <samples>720</samples>
+            <samples>720</samples>           <!-- 720 rays per scan = 0.5° angular resolution -->
             <resolution>1</resolution>
-            <min_angle>-3.14159</min_angle>
-            <max_angle>3.14159</max_angle>
+            <min_angle>-3.14159</min_angle>  <!-- sweep starts at -180° -->
+            <max_angle>3.14159</max_angle>   <!-- sweep ends at +180° (full 360° coverage) -->
           </horizontal>
         </scan>
         <range>
-          <min>0.10</min>
-          <max>12.0</max>
-          <resolution>0.01</resolution>
+          <min>0.10</min>     <!-- ignore returns closer than 10 cm (prevents self-detections) -->
+          <max>12.0</max>     <!-- maximum detection range: 12 metres -->
+          <resolution>0.01</resolution>  <!-- distance resolution: 1 cm -->
         </range>
+        <!-- Small Gaussian noise to simulate real-world LiDAR measurement uncertainty -->
         <noise type="gaussian"><mean>0.0</mean><stddev>0.01</stddev></noise>
       </lidar>
-      <alwaysOn>true</alwaysOn>
-      <visualize>false</visualize>
+      <alwaysOn>true</alwaysOn>    <!-- keep the sensor running even when paused -->
+      <visualize>false</visualize> <!-- don't draw laser rays in Gazebo GUI (improves performance) -->
     </sensor>
   </gazebo>
 
   <!-- ==================== IMU ==================== -->
+  <!--
+    Inertial Measurement Unit (IMU) embedded at the geometric centre of the chassis.
+    Measures angular velocity (gyroscope) and linear acceleration (accelerometer).
+    Publishes sensor_msgs/Imu on /imu/data_raw at 100 Hz.
+    Used by the EKF to fuse yaw rate with wheel odometry for a better pose estimate.
+  -->
   <link name="imu_link">
     <inertial>
       <mass value="${imu_mass}"/>
-      <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
+      <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>  <!-- negligible inertia -->
     </inertial>
+    <!-- No visual or collision: the IMU is treated as a massless coordinate frame -->
   </link>
 
+  <!-- Fixed joint: IMU is rigidly attached at chassis mid-height -->
   <joint name="imu_joint" type="fixed">
     <parent link="base_link"/>
     <child  link="imu_link"/>
+    <!-- z = base_height/2: geometric centre of the chassis (0.125 m above base_link origin) -->
     <origin xyz="0 0 ${base_height/2}" rpy="0 0 0"/>
   </joint>
 
   <gazebo reference="imu_link">
-    <!-- IMU sensor plugin — embedded directly, same as professor's camera sensor pattern -->
+    <!-- IMU sensor plugin — embedded directly, same as professor's camera sensor pattern.
+         Output is bridged to /imu/data_raw by gz_ros_bridge. -->
     <sensor name="imu_sensor" type="imu">
-      <update_rate>100</update_rate>
-      <topic>/imu/data_raw</topic>
-      <gz_frame_id>imu_link</gz_frame_id>
+      <update_rate>100</update_rate>            <!-- 100 Hz = high-frequency orientation data -->
+      <topic>/imu/data_raw</topic>              <!-- Gazebo internal topic -->
+      <gz_frame_id>imu_link</gz_frame_id>       <!-- TF frame for the IMU measurements -->
       <imu>
+        <!-- Gaussian noise on each angular velocity axis (gyroscope noise model) -->
         <angular_velocity>
-          <x><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></x>
+          <x><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></x>  <!-- 0.009 rad/s noise -->
           <y><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></y>
           <z><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></z>
         </angular_velocity>
+        <!-- Gaussian noise on each linear acceleration axis (accelerometer noise model) -->
         <linear_acceleration>
-          <x><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></x>
+          <x><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></x>  <!-- 0.021 m/s² noise -->
           <y><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></y>
           <z><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></z>
         </linear_acceleration>
@@ -233,17 +338,31 @@
   </gazebo>
 
   <!-- ==================== ros2_control ==================== -->
+  <!--
+    Declares which joints are controlled by ros2_control and what command/state
+    interfaces they expose.
+
+    The hardware plugin is gz_ros2_control/GazeboSimSystem, which makes Gazebo
+    physics act as the hardware backend:
+      - diff_drive_controller writes velocity commands to these interfaces
+      - Gazebo applies those velocities to the simulated wheels
+      - The joint encoders (position, velocity) are read back through state interfaces
+
+    command_interface "velocity": the controller sends a target angular velocity (rad/s)
+    state_interface "position": encoder position (accumulated radians) is readable
+    state_interface "velocity": encoder velocity (rad/s) is readable
+  -->
   <ros2_control name="warehouse_amr_hardware" type="system">
     <hardware>
-      <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+      <plugin>gz_ros2_control/GazeboSimSystem</plugin>  <!-- Gazebo as the hardware backend -->
     </hardware>
     <joint name="left_wheel_joint">
-      <command_interface name="velocity">
-        <param name="min">-10</param>
-        <param name="max">10</param>
+      <command_interface name="velocity">  <!-- diff_drive_controller sends wheel speed here -->
+        <param name="min">-10</param>      <!-- minimum velocity: -10 rad/s -->
+        <param name="max">10</param>       <!-- maximum velocity: +10 rad/s -->
       </command_interface>
-      <state_interface name="position"/>
-      <state_interface name="velocity"/>
+      <state_interface name="position"/>  <!-- read accumulated wheel angle from encoder -->
+      <state_interface name="velocity"/>  <!-- read current wheel angular velocity from encoder -->
     </joint>
     <joint name="right_wheel_joint">
       <command_interface name="velocity">
@@ -258,25 +377,33 @@
   <!-- ==================== GZ ros2_control PLUGIN ==================== -->
   <!--
     Professor embeds all plugins directly in the URDF.
-    The gz_ros2_control plugin loads the controller_manager and reads
-    controllers_yaml (absolute path passed from sim.launch.py via xacro arg).
+    The gz_ros2_control plugin starts the controller_manager inside Gazebo and
+    loads the controllers whose parameters are in ros2_controllers.yaml.
+    The path to ros2_controllers.yaml is passed as a xacro arg from sim.launch.py
+    so the path is resolved at launch time (not hardcoded in this file).
   -->
   <gazebo>
     <plugin filename="gz_ros2_control-system"
             name="gz_ros2_control::GazeboSimROS2ControlPlugin">
-      <parameters>$(arg controllers_yaml)</parameters>
+      <parameters>$(arg controllers_yaml)</parameters>  <!-- absolute path to ros2_controllers.yaml -->
       <ros>
+        <!-- remap so the plugin reads the robot description from the standard ROS topic -->
         <remapping>~/robot_description:=/robot_description</remapping>
       </ros>
     </plugin>
   </gazebo>
 
   <!-- ==================== JOINT STATE PUBLISHER PLUGIN ==================== -->
-  <!-- Professor uses gz-sim-joint-state-publisher-system — same here -->
+  <!--
+    Publishes /joint_states (sensor_msgs/JointState) for all joints in the model.
+    robot_state_publisher subscribes to /joint_states and uses it to broadcast
+    the dynamic TF transforms for the spinning wheels.
+    Professor uses gz-sim-joint-state-publisher-system — same here.
+  -->
   <gazebo>
     <plugin filename="gz-sim-joint-state-publisher-system"
             name="gz::sim::systems::JointStatePublisher">
-      <topic>joint_states</topic>
+      <topic>joint_states</topic>  <!-- publishes on /joint_states -->
     </plugin>
   </gazebo>
 

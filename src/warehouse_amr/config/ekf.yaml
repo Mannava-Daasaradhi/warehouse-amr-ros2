@@ -1,26 +1,50 @@
+# ekf.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Extended Kalman Filter (EKF) configuration for the robot_localization package.
+#
+# PURPOSE: Fuse wheel odometry (/diff_drive_controller/odom) with IMU data
+#          (/imu/data_raw) to produce a smooth, drift-reduced pose estimate on
+#          /odometry/filtered and publish the odom → base_footprint TF transform.
+#
+# WHY EKF? Wheel odometry alone accumulates drift (wheel slip, encoder noise).
+# IMU alone drifts in heading over time. The EKF combines both: odometry
+# provides linear velocity; IMU provides angular velocity (yaw rate). Together
+# they produce a better estimate than either sensor alone.
+# ─────────────────────────────────────────────────────────────────────────────
+
 ekf_filter_node:
   ros__parameters:
-    use_sim_time: true
-    frequency: 30.0
-    sensor_timeout: 0.1
-    two_d_mode: true
-    publish_tf: true
-    map_frame: map
-    odom_frame: odom
-    base_link_frame: base_footprint
-    world_frame: odom
+    use_sim_time: true         # use Gazebo /clock instead of wall clock (required in simulation)
+    frequency: 30.0            # EKF prediction-correction cycle rate in Hz (30 Hz = every 33 ms)
+    sensor_timeout: 0.1        # if a sensor hasn't published for 0.1 s, hold its last known value
+    two_d_mode: true           # constrain the robot to the XY plane; ignore Z, roll, and pitch
+    publish_tf: true           # broadcast the odom → base_footprint TF transform
+    map_frame: map             # name of the global map frame (context only; EKF does not publish map→odom)
+    odom_frame: odom           # name of the odometry frame (parent of base_footprint in TF)
+    base_link_frame: base_footprint  # the robot's reference frame that the EKF estimates
+    world_frame: odom          # fixed reference frame for the filter (odom = no map correction here)
 
-    odom0: /diff_drive_controller/odom
-    odom0_config: [false, false, false,
-                   false, false, false,
-                   true,  true,  false,
-                   false, false, true,
-                   false, false, false]
+    # ── Wheel odometry input ────────────────────────────────────────────────
+    odom0: /diff_drive_controller/odom  # raw wheel-encoder odometry from the differential drive controller
 
-    imu0: /imu/data_raw
-    imu0_config: [false, false, false,
-                  false, false, true,
-                  false, false, false,
-                  false, false, true,
-                  false, false, false]
-    imu0_remove_gravitational_acceleration: true
+    # odom0_config: 15-element boolean array selecting which state variables
+    # to read from this odometry source.
+    # Order: [x, y, z,  roll, pitch, yaw,  vx, vy, vz,  vroll, vpitch, vyaw,  ax, ay, az]
+    odom0_config: [false, false, false,   # x, y, z position — not used (SLAM/AMCL provides position)
+                   false, false, false,   # roll, pitch, yaw orientation — not used (IMU handles yaw)
+                   true,  true,  false,   # vx (forward speed), vy (strafe), vz — vx and vy used from odom
+                   false, false, true,    # vroll, vpitch, vyaw (yaw rate) — yaw rate from wheel differential
+                   false, false, false]   # ax, ay, az acceleration — not provided by wheel odometry
+
+    # ── IMU input ────────────────────────────────────────────────────────────
+    imu0: /imu/data_raw  # raw IMU measurements from the Gazebo IMU plugin at 100 Hz
+
+    # imu0_config: same 15-element structure as odom0_config
+    # Order: [x, y, z,  roll, pitch, yaw,  vx, vy, vz,  vroll, vpitch, vyaw,  ax, ay, az]
+    imu0_config: [false, false, false,   # x, y, z position — IMU cannot measure absolute position
+                  false, false, true,    # roll, pitch, yaw — use IMU's integrated yaw (orientation Z)
+                  false, false, false,   # vx, vy, vz linear velocity — not used from IMU
+                  false, false, true,    # vroll, vpitch, vyaw — use IMU gyroscope yaw rate
+                  false, false, false]   # ax, ay, az — accelerometer not used (2-D mode, gravity removed)
+
+    imu0_remove_gravitational_acceleration: true  # subtract 9.81 m/s² from IMU Z-axis so gravity doesn't bias the filter
