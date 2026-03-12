@@ -2,144 +2,172 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Nav2 + SLAM Toolbox configuration for warehouse AMR
 # ROS 2 Jazzy | Nav2 1.3+
+#
+# This single file configures every Nav2 server and SLAM Toolbox.
+# It is loaded by navigation_launch.py (for Nav2) and sim.launch.py (for SLAM).
+#
+# For a full explanation of every parameter, see:
+#   docs/config_files_explained.md
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── AMCL — Adaptive Monte Carlo Localisation ──────────────────────────────────
+# Used when slam:=false. Estimates robot pose within a pre-built map using
+# a particle filter. Active particles are weighted by how well the LiDAR
+# scan matches the map at each candidate pose.
 amcl:
   ros__parameters:
     use_sim_time: true
-    alpha1: 0.2
-    alpha2: 0.2
-    alpha3: 0.2
-    alpha4: 0.2
-    alpha5: 0.1
-    base_frame_id: "base_footprint"
+    # Motion model noise — how much the particle filter spreads when the robot moves
+    alpha1: 0.2  # noise from rotation affecting rotation estimate
+    alpha2: 0.2  # noise from translation affecting rotation estimate
+    alpha3: 0.2  # noise from translation affecting translation estimate
+    alpha4: 0.2  # noise from rotation affecting translation estimate
+    alpha5: 0.1  # strafe noise (unused for differential drive but required)
+    base_frame_id: "base_footprint"   # the robot frame that AMCL tracks
     beam_skip_distance: 0.5
     beam_skip_error_threshold: 0.9
     beam_skip_threshold: 0.3
     do_beamskip: false
-    global_frame_id: "map"
+    global_frame_id: "map"            # fixed frame that holds the map
     lambda_short: 0.1
-    laser_likelihood_max_dist: 2.0
-    laser_max_range: 12.0
-    laser_min_range: 0.1
-    laser_model_type: "likelihood_field"
-    max_beams: 60
-    max_particles: 3000
-    min_particles: 500
+    laser_likelihood_max_dist: 2.0    # max distance in the likelihood field for matching
+    laser_max_range: 12.0             # ignore LiDAR returns beyond this range
+    laser_min_range: 0.1              # ignore LiDAR returns closer than this
+    laser_model_type: "likelihood_field"  # pre-computed distance field (faster than beam model)
+    max_beams: 60                     # use 60 of the 720 rays (evenly spaced) to save CPU
+    max_particles: 3000               # upper bound on particle count (more = more accurate, slower)
+    min_particles: 500                # lower bound (always maintain at least 500 particles)
     odom_frame_id: "odom"
     pf_err: 0.05
     pf_z: 0.99
     recovery_alpha_fast: 0.0
     recovery_alpha_slow: 0.0
-    resample_interval: 1
-    robot_model_type: "nav2_amcl::DifferentialMotionModel"
+    resample_interval: 1              # resample particles every scan update
+    robot_model_type: "nav2_amcl::DifferentialMotionModel"  # diff-drive motion model
     save_pose_rate: 0.5
-    sigma_hit: 0.2
-    tf_broadcast: true
-    transform_tolerance: 1.0
-    update_min_a: 0.2
-    update_min_d: 0.25
+    sigma_hit: 0.2                    # standard deviation of the laser hit model
+    tf_broadcast: true                # publish map → odom TF
+    transform_tolerance: 1.0         # allow up to 1 second of TF timestamp lag
+    update_min_a: 0.2                 # only update particles after rotating ~11° (saves CPU)
+    update_min_d: 0.25                # only update particles after moving 25 cm (saves CPU)
     z_hit: 0.5
     z_max: 0.05
     z_rand: 0.5
     z_short: 0.05
     scan_topic: /scan
     map_topic: /map
-    set_initial_pose: true
-    initial_pose:
+    set_initial_pose: true            # seed particles at a known location rather than spreading globally
+    initial_pose:                     # robot spawn position — must match sim.launch.py spawn arguments
       x: 0.5
       y: 0.5
       z: 0.0
-      yaw: -1.5707963
+      yaw: -1.5707963                 # -90° = facing south (-Y direction); matches spawn yaw in sim.launch.py
 
+# ── BT Navigator — Behaviour Tree Navigator ───────────────────────────────────
+# The top-level action server that mission_executor.py calls via goToPose().
+# It orchestrates the full navigate-to-pose pipeline using a Behaviour Tree XML.
 bt_navigator:
   ros__parameters:
     use_sim_time: true
-    global_frame: map
-    robot_base_frame: base_link
-    odom_topic: /odometry/filtered
-    bt_loop_duration: 10
-    default_server_timeout: 20
-    wait_for_service_timeout: 1000
-    action_server_result_timeout: 900.0
+    global_frame: map                   # planning is done in the map frame
+    robot_base_frame: base_link         # robot body frame
+    odom_topic: /odometry/filtered      # EKF-fused odometry (not raw wheel odom)
+    bt_loop_duration: 10                # Behaviour Tree tick period in milliseconds (100 Hz)
+    default_server_timeout: 20          # seconds to wait for action servers during startup
+    wait_for_service_timeout: 1000      # milliseconds to wait for ROS services
+    action_server_result_timeout: 900.0 # seconds before a navigation goal times out (15 minutes)
     navigators: ["navigate_to_pose", "navigate_through_poses"]
     navigate_to_pose:
-      plugin: "nav2_bt_navigator::NavigateToPoseNavigator"
+      plugin: "nav2_bt_navigator::NavigateToPoseNavigator"         # single-goal navigator
     navigate_through_poses:
-      plugin: "nav2_bt_navigator::NavigateThroughPosesNavigator"
+      plugin: "nav2_bt_navigator::NavigateThroughPosesNavigator"   # multi-pose navigator
+    # Behaviour Tree XML files that define the full navigation pipeline including
+    # replanning and recovery (spin/backup on failure):
     default_nav_to_pose_bt_xml: "/opt/ros/jazzy/share/nav2_bt_navigator/behavior_trees/navigate_to_pose_w_replanning_and_recovery.xml"
     default_nav_through_poses_bt_xml: "/opt/ros/jazzy/share/nav2_bt_navigator/behavior_trees/navigate_through_poses_w_replanning_and_recovery.xml"
 
+# ── Controller Server — Local Planner ─────────────────────────────────────────
+# Converts the global path into wheel velocity commands at 20 Hz.
+# Uses the Regulated Pure Pursuit controller: the robot looks ahead on the
+# path and steers toward that point, adjusting speed for curvature and obstacles.
 controller_server:
   ros__parameters:
     use_sim_time: true
-    controller_frequency: 20.0
-    costmap_update_timeout: 0.30
-    min_x_velocity_threshold: 0.001
-    min_y_velocity_threshold: 0.5
-    min_theta_velocity_threshold: 0.001
-    failure_tolerance: 0.3
+    controller_frequency: 20.0          # local planning loop rate in Hz
+    costmap_update_timeout: 0.30        # fail if costmap hasn't updated in 0.3 s
+    min_x_velocity_threshold: 0.001     # treat velocities below this as zero (avoids noise)
+    min_y_velocity_threshold: 0.5       # strafe threshold (high because diff-drive can't strafe)
+    min_theta_velocity_threshold: 0.001 # rotational velocity threshold
+    failure_tolerance: 0.3              # tolerate controller failure for 0.3 s before recovery
     progress_checker_plugins: ["progress_checker"]
     goal_checker_plugins: ["general_goal_checker"]
     controller_plugins: ["FollowPath"]
     use_realtime_priority: false
 
+    # ── Progress checker: ensures the robot is actually making progress ──────
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      required_movement_radius: 0.5
-      movement_time_allowance: 10.0
+      required_movement_radius: 0.5    # must move 0.5 m within the time window
+      movement_time_allowance: 10.0    # time window in seconds to check for movement
 
+    # ── Goal checker: determines when the robot has "arrived" ────────────────
     general_goal_checker:
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.15
-      yaw_goal_tolerance: 0.1
-      stateful: true
+      xy_goal_tolerance: 0.15          # within 15 cm of target position = arrived
+      yaw_goal_tolerance: 0.1          # within ~5.7° of target heading = arrived
+      stateful: true                   # once within tolerance, stay "arrived" even if robot drifts
 
+    # ── Regulated Pure Pursuit Controller ────────────────────────────────────
     FollowPath:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
-      desired_linear_vel: 0.8
-      lookahead_dist: 0.6
-      min_lookahead_dist: 0.3
-      max_lookahead_dist: 0.9
-      lookahead_time: 1.5
-      rotate_to_heading_angular_vel: 1.2
+      desired_linear_vel: 0.8           # cruise speed in m/s (straight segments)
+      lookahead_dist: 0.6              # steer toward a point 0.6 m ahead on the path
+      min_lookahead_dist: 0.3          # minimum lookahead (prevents oscillation at low speed)
+      max_lookahead_dist: 0.9          # maximum lookahead (prevents cutting corners too hard)
+      lookahead_time: 1.5              # alternatively, lookahead = speed × time
+      rotate_to_heading_angular_vel: 1.2  # rotate at 1.2 rad/s to face the path before driving
       transform_tolerance: 0.2
       use_velocity_scaled_lookahead_dist: false
-      min_approach_linear_velocity: 0.05
-      approach_velocity_scaling_dist: 1.0
-      use_collision_detection: true
+      min_approach_linear_velocity: 0.05  # slow to 5 cm/s when very close to goal
+      approach_velocity_scaling_dist: 1.0 # start slowing 1 m before the goal
+      use_collision_detection: true        # stop if path ahead has an obstacle
       max_allowed_time_to_collision_up_to_carrot: 1.0
-      use_regulated_linear_velocity_scaling: true
+      use_regulated_linear_velocity_scaling: true  # slow down on tight curves
       use_fixed_curvature_lookahead: false
       curvature_lookahead_dist: 0.25
       use_cost_regulated_linear_velocity_scaling: false
       regulated_linear_scaling_min_radius: 0.9
       regulated_linear_scaling_min_speed: 0.25
-      use_rotate_to_heading: true
-      allow_reversing: false
-      rotate_to_heading_min_angle: 0.785
-      max_angular_accel: 3.2
+      use_rotate_to_heading: true     # rotate in-place before starting to drive (smoother entry)
+      allow_reversing: false          # robot only drives forward
+      rotate_to_heading_min_angle: 0.785  # only rotate in-place if heading error > 45°
+      max_angular_accel: 3.2          # max angular acceleration (matches ros2_controllers limit)
       max_robot_pose_search_dist: 10.0
       interpolate_curvature_after_goal: false
       cost_scaling_dist: 0.3
       cost_scaling_gain: 1.0
       inflation_cost_scaling_factor: 3.0
 
+# ── Local Costmap ─────────────────────────────────────────────────────────────
+# A rolling 5×5 m window centred on the robot, used for real-time obstacle avoidance.
+# The controller_server reads this costmap when computing velocity commands.
 local_costmap:
   local_costmap:
     ros__parameters:
       use_sim_time: true
-      update_frequency: 10.0
-      publish_frequency: 5.0
-      global_frame: odom
+      update_frequency: 10.0         # update the costmap 10 times per second
+      publish_frequency: 5.0         # publish the costmap for RViz2 at 5 Hz
+      global_frame: odom             # local costmap is in the odom frame (moves with robot)
       robot_base_frame: base_link
-      rolling_window: true
-      width: 5
-      height: 5
-      resolution: 0.05
+      rolling_window: true           # the window follows the robot
+      width: 5                       # costmap window is 5 m wide
+      height: 5                      # costmap window is 5 m tall
+      resolution: 0.05               # each cell represents a 5 cm × 5 cm area
+      # Robot footprint polygon (rectangle): corners at (±0.30, ±0.25) from centre
       footprint: "[[0.30, 0.25], [0.30, -0.25], [-0.30, -0.25], [-0.30, 0.25]]"
-      footprint_padding: 0.03
+      footprint_padding: 0.03        # add 3 cm safety margin around the footprint
       plugins: ["voxel_layer", "inflation_layer"]
+      # voxel_layer: marks obstacles detected by the LiDAR scan
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: true
@@ -153,38 +181,45 @@ local_costmap:
         scan:
           topic: /scan
           max_obstacle_height: 2.0
-          clearing: true
-          marking: true
+          clearing: true             # remove cells when LiDAR confirms they are clear
+          marking: true              # mark cells as occupied when LiDAR sees an obstacle
           data_type: "LaserScan"
-          raytrace_max_range: 8.0
+          raytrace_max_range: 8.0    # clear cells up to 8 m along each laser ray
           raytrace_min_range: 0.0
-          obstacle_max_range: 6.0
+          obstacle_max_range: 6.0   # mark obstacles up to 6 m away
           obstacle_min_range: 0.0
+      # inflation_layer: expands obstacles by inflation_radius so the planner
+      # keeps the robot away from walls even with a straight path
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.45
+        inflation_radius: 0.45       # inflate obstacles by 45 cm (> half robot width of 25 cm)
       always_send_full_costmap: true
 
+# ── Global Costmap ────────────────────────────────────────────────────────────
+# Covers the entire map. The path planner uses this to find collision-free paths
+# from the current robot position to the goal.
 global_costmap:
   global_costmap:
     ros__parameters:
       use_sim_time: true
-      update_frequency: 1.0
-      publish_frequency: 1.0
-      global_frame: map
+      update_frequency: 1.0          # update at 1 Hz (slower than local; the static map rarely changes)
+      publish_frequency: 1.0         # publish at 1 Hz for RViz2
+      global_frame: map              # global costmap is fixed to the map frame
       robot_base_frame: base_link
       footprint: "[[0.30, 0.25], [0.30, -0.25], [-0.30, -0.25], [-0.30, 0.25]]"
       footprint_padding: 0.03
-      resolution: 0.05
-      track_unknown_space: true
+      resolution: 0.05               # same resolution as the SLAM map (0.05 m per cell)
+      track_unknown_space: true      # leave unexplored cells as "unknown" rather than free
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      # static_layer: loads the permanent walls from the SLAM or map_server map
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: true
         enabled: true
-        subscribe_to_updates: true
+        subscribe_to_updates: true   # update when the map topic republishes (e.g. SLAM improves)
         transform_tolerance: 0.1
+      # obstacle_layer: adds live sensor obstacles on top of the static map
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
@@ -195,52 +230,64 @@ global_costmap:
           clearing: true
           marking: true
           data_type: "LaserScan"
-          raytrace_max_range: 10.0
+          raytrace_max_range: 10.0  # clear cells up to 10 m
           raytrace_min_range: 0.0
-          obstacle_max_range: 8.0
+          obstacle_max_range: 8.0  # mark obstacles up to 8 m
           obstacle_min_range: 0.0
+      # inflation_layer: larger radius than local costmap for conservative global paths
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.55
+        inflation_radius: 0.55       # 55 cm inflation for global planning (more conservative)
       always_send_full_costmap: true
 
+# ── Map Server (used when slam:=false) ────────────────────────────────────────
+# Loads the pre-built warehouse_map.yaml/pgm and publishes it on /map.
 map_server:
   ros__parameters:
     use_sim_time: true
-    yaml_filename: "warehouse_map.yaml"
-    topic_name: "map"
-    frame_id: "map"
+    yaml_filename: "warehouse_map.yaml"  # relative path resolved against the maps/ directory
+    topic_name: "map"                    # publish the occupancy grid on this topic
+    frame_id: "map"                      # the coordinate frame of the map
 
 map_saver:
   ros__parameters:
     use_sim_time: true
-    save_map_timeout: 5.0
-    free_thresh_default: 0.25
-    occupied_thresh_default: 0.65
+    save_map_timeout: 5.0              # seconds to wait for a map message before giving up
+    free_thresh_default: 0.25          # pixels below this probability are saved as free
+    occupied_thresh_default: 0.65      # pixels above this probability are saved as occupied
     map_subscribe_transient_local: true
 
+# ── Planner Server — Global Path Planner ─────────────────────────────────────
+# Finds the shortest collision-free path from the current pose to the goal
+# using Dijkstra's algorithm on the global costmap.
 planner_server:
   ros__parameters:
     use_sim_time: true
-    expected_planner_frequency: 20.0
+    expected_planner_frequency: 20.0   # target planning rate in Hz (replans when path is blocked)
     planner_plugins: ["GridBased"]
     GridBased:
-      plugin: "nav2_navfn_planner::NavfnPlanner"
-      tolerance: 0.5
-      use_astar: false
-      allow_unknown: true
+      plugin: "nav2_navfn_planner::NavfnPlanner"  # Dijkstra / A* grid-based planner
+      tolerance: 0.5        # accept a goal point within 0.5 m if exact goal is unreachable
+      use_astar: false       # false = Dijkstra (optimal); true = A* (faster but not always optimal)
+      allow_unknown: true    # plan through cells the robot hasn't mapped yet
 
+# ── Smoother Server ───────────────────────────────────────────────────────────
+# Post-processes the global path to remove sharp corners, producing a
+# smoother trajectory for the controller to follow.
 smoother_server:
   ros__parameters:
     use_sim_time: true
     smoother_plugins: ["simple_smoother"]
     simple_smoother:
       plugin: "nav2_smoother::SimpleSmoother"
-      tolerance: 1.0e-10
-      max_its: 1000
-      do_refinement: true
+      tolerance: 1.0e-10    # convergence threshold (very tight for maximum smoothing)
+      max_its: 1000          # maximum smoothing iterations per path
+      do_refinement: true    # do a second smoothing pass for even smoother paths
 
+# ── Behaviour Server — Recovery Behaviours ────────────────────────────────────
+# Executes recovery behaviours when navigation gets stuck.
+# The bt_navigator triggers these when the robot cannot make progress.
 behavior_server:
   ros__parameters:
     use_sim_time: true
@@ -248,120 +295,135 @@ behavior_server:
     global_costmap_topic: global_costmap/costmap_raw
     local_footprint_topic: local_costmap/published_footprint
     global_footprint_topic: global_costmap/published_footprint
-    cycle_frequency: 10.0
+    cycle_frequency: 10.0             # behaviours tick at 10 Hz
     behavior_plugins: ["spin", "backup", "drive_on_heading", "wait", "assisted_teleop"]
     spin:
-      plugin: "nav2_behaviors::Spin"
+      plugin: "nav2_behaviors::Spin"             # rotate 360° in-place to clear stuck state
     backup:
-      plugin: "nav2_behaviors::BackUp"
+      plugin: "nav2_behaviors::BackUp"           # drive backward a short distance
     drive_on_heading:
-      plugin: "nav2_behaviors::DriveOnHeading"
+      plugin: "nav2_behaviors::DriveOnHeading"   # drive forward on current heading
     wait:
-      plugin: "nav2_behaviors::Wait"
+      plugin: "nav2_behaviors::Wait"             # pause for a configurable duration
     assisted_teleop:
-      plugin: "nav2_behaviors::AssistedTeleop"
+      plugin: "nav2_behaviors::AssistedTeleop"   # allow human control while avoiding collisions
     local_frame: odom
     global_frame: map
     robot_base_frame: base_link
     transform_tolerance: 0.2
-    simulate_ahead_time: 2.0
-    max_rotational_vel: 1.0
-    min_rotational_vel: 0.4
-    rotational_acc_lim: 3.2
+    simulate_ahead_time: 2.0          # simulate 2 seconds ahead to check if recovery is safe
+    max_rotational_vel: 1.0           # maximum spin speed during recovery (rad/s)
+    min_rotational_vel: 0.4           # minimum spin speed to overcome static friction (rad/s)
+    rotational_acc_lim: 3.2           # angular acceleration limit (matches controller limit)
 
+# ── Waypoint Follower ─────────────────────────────────────────────────────────
+# Drives through a list of poses sequentially.
+# NOTE: mission_executor.py does NOT use this; it calls goToPose() directly.
+# This server is available for use cases that need to send the entire route at once.
 waypoint_follower:
   ros__parameters:
     use_sim_time: true
-    loop_rate: 20
-    stop_on_failure: false
-    action_server_result_timeout: 900.0
+    loop_rate: 20                        # check for completion at 20 Hz
+    stop_on_failure: false               # continue to next waypoint if one fails
+    action_server_result_timeout: 900.0  # 15-minute overall timeout
     waypoint_task_executor_plugin: "wait_at_waypoint"
     wait_at_waypoint:
       plugin: "nav2_waypoint_follower::WaitAtWaypoint"
       enabled: true
-      waypoint_pause_duration: 200
+      waypoint_pause_duration: 200       # wait 200 ms at each waypoint before continuing
 
+# ── Velocity Smoother ─────────────────────────────────────────────────────────
+# Low-pass filters velocity commands to respect acceleration limits.
+# Sits between controller_server and collision_monitor.
 velocity_smoother:
   ros__parameters:
     use_sim_time: true
-    smoothing_frequency: 20.0
+    smoothing_frequency: 20.0    # output rate in Hz (matches controller frequency)
     scale_velocities: false
-    feedback: "OPEN_LOOP"
-    max_velocity: [0.8, 0.0, 2.0]
-    min_velocity: [-0.8, 0.0, -2.0]
-    max_accel: [2.5, 0.0, 3.2]
-    max_decel: [-2.5, 0.0, -3.2]
-    odom_topic: "odometry/filtered"
+    feedback: "OPEN_LOOP"        # compute smoothed command from previous command, not measured velocity
+    max_velocity: [0.8, 0.0, 2.0]      # [linear_x, linear_y, angular_z] max — matches ros2_controllers
+    min_velocity: [-0.8, 0.0, -2.0]    # [linear_x, linear_y, angular_z] min
+    max_accel: [2.5, 0.0, 3.2]         # [linear, -, angular] acceleration limits (m/s² and rad/s²)
+    max_decel: [-2.5, 0.0, -3.2]       # [linear, -, angular] deceleration limits (negative = braking)
+    odom_topic: "odometry/filtered"    # EKF output used to measure actual velocity
     odom_duration: 0.1
-    deadband_velocity: [0.0, 0.0, 0.0]
-    velocity_timeout: 1.0
+    deadband_velocity: [0.0, 0.0, 0.0] # velocities below this are zeroed (avoids servo oscillation)
+    velocity_timeout: 1.0              # stop publishing if no new velocity command for 1 s
 
+# ── Collision Monitor ─────────────────────────────────────────────────────────
+# Final safety gate before velocity commands reach the wheels.
+# Reads /scan and /cmd_vel_smoothed; slows or stops the robot if an obstacle
+# is predicted to be hit within time_before_collision seconds.
 collision_monitor:
   ros__parameters:
     use_sim_time: true
     base_frame_id: "base_footprint"
     odom_frame_id: "odom"
-    cmd_vel_in_topic: "cmd_vel_smoothed"
-    cmd_vel_out_topic: "cmd_vel"
+    cmd_vel_in_topic: "cmd_vel_smoothed"  # input: from velocity_smoother
+    cmd_vel_out_topic: "cmd_vel"          # output: to twist_stamper → diff_drive_controller → wheels
     state_topic: "collision_monitor_state"
     transform_tolerance: 0.5
-    source_timeout: 5.0
+    source_timeout: 5.0                   # stop robot if scan stops publishing for 5 s
     base_shift_correction: true
-    stop_pub_timeout: 2.0
+    stop_pub_timeout: 2.0                 # publish zero velocity for 2 s after stopping
     polygons: ["FootprintApproach"]
     FootprintApproach:
       type: "polygon"
-      action_type: "approach"
+      action_type: "approach"            # slow down proportionally as obstacle approaches
       footprint_topic: "/local_costmap/published_footprint"
-      time_before_collision: 2.0
+      time_before_collision: 2.0         # start slowing when collision is predicted within 2 s
       simulation_time_step: 0.02
-      min_points: 6
+      min_points: 6                      # require at least 6 scan points to trigger (avoids spurious stops)
       visualize: false
       enabled: true
     observation_sources: ["scan"]
     scan:
       type: "scan"
       topic: "/scan"
-      min_height: 0.15
-      max_height: 2.0
+      min_height: 0.15   # ignore returns below 15 cm (floor reflections / bumps)
+      max_height: 2.0    # ignore returns above 2 m (ceiling lights / beams)
       enabled: true
 
+# ── SLAM Toolbox ──────────────────────────────────────────────────────────────
+# Builds a 2-D occupancy map from LiDAR scans in real time.
+# Publishes /map (nav_msgs/OccupancyGrid) and the map → odom TF transform.
+# Active when slam:=true (the default).
 slam_toolbox:
   ros__parameters:
     use_sim_time: true
-    solver_plugin: solver_plugins::CeresSolver
-    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    solver_plugin: solver_plugins::CeresSolver      # use Google Ceres for scan-matching optimisation
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY     # linear solver for the Ceres optimisation problem
     ceres_preconditioner: SCHUR_JACOBI
-    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_trust_strategy: LEVENBERG_MARQUARDT       # trust region method for non-linear least squares
     ceres_dogleg_type: TRADITIONAL_DOGLEG
     ceres_loss_function: None
     odom_frame: odom
     map_frame: map
-    base_frame: base_footprint
-    scan_topic: /scan
-    mode: mapping
-    map_start_pose: [0.0, 0.0, 0.0]
+    base_frame: base_footprint                      # the robot frame SLAM tracks
+    scan_topic: /scan                               # LiDAR input topic
+    mode: mapping                                   # build a new map (vs. "localization" mode)
+    map_start_pose: [0.0, 0.0, 0.0]                # start building the map with origin at (0,0,0°)
     debug_logging: false
-    throttle_scans: 1
-    transform_publish_period: 0.02
-    map_update_interval: 5.0
-    resolution: 0.05
-    max_laser_range: 12.0
-    minimum_time_interval: 0.5
+    throttle_scans: 1                              # process every scan (1 = no throttling)
+    transform_publish_period: 0.02                 # publish map→odom TF at 50 Hz (every 20 ms)
+    map_update_interval: 5.0                       # rebuild /map every 5 seconds
+    resolution: 0.05                               # map cell size in metres (5 cm per cell)
+    max_laser_range: 12.0                          # ignore LiDAR returns beyond 12 m when building the map
+    minimum_time_interval: 0.5                     # minimum seconds between processed scans
     transform_timeout: 0.2
     tf_buffer_duration: 30.0
-    stack_size_to_use: 40000000
-    enable_interactive_mode: true
-    use_scan_matching: true
+    stack_size_to_use: 40000000                    # 40 MB stack for the Ceres solver thread
+    enable_interactive_mode: true                  # allow interactive loop closure via RViz2 plugin
+    use_scan_matching: true                        # use scan-to-map matching for each new scan
     use_scan_barycenter: true
-    minimum_travel_distance: 0.5
-    minimum_travel_heading: 0.5
+    minimum_travel_distance: 0.5                   # process a new scan only after moving 0.5 m
+    minimum_travel_heading: 0.5                    # or after rotating ~28°
     scan_buffer_size: 10
     scan_buffer_maximum_scan_distance: 10.0
     link_match_minimum_response_fine: 0.1
     link_scan_maximum_distance: 1.5
     loop_search_maximum_distance: 3.0
-    do_loop_closing: true
+    do_loop_closing: true                          # correct accumulated drift when the robot revisits areas
     loop_match_minimum_chain_size: 10
     loop_match_maximum_variance_coarse: 3.0
     loop_match_minimum_response_coarse: 0.35

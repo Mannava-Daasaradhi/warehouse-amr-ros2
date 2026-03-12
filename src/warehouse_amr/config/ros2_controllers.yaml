@@ -1,49 +1,75 @@
+# ros2_controllers.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# ros2_control configuration for the Warehouse AMR.
+# Loaded by the gz_ros2_control plugin inside Gazebo, which reads this file
+# via the xacro arg controllers_yaml passed from sim.launch.py.
+#
+# Two controllers are used:
+#   1. joint_state_broadcaster — reads wheel encoders → publishes /joint_states
+#   2. diff_drive_controller   — converts /diff_drive_controller/cmd_vel (TwistStamped)
+#                                into individual wheel velocity commands and
+#                                publishes wheel-encoder odometry
+# ─────────────────────────────────────────────────────────────────────────────
+
 controller_manager:
   ros__parameters:
-    update_rate: 100
+    update_rate: 100  # control loop runs at 100 Hz (every 10 ms); fast enough for smooth motion
+
+    # Register the two controllers; they are activated by spawner nodes in sim.launch.py
     joint_state_broadcaster:
-      type: joint_state_broadcaster/JointStateBroadcaster
+      type: joint_state_broadcaster/JointStateBroadcaster  # reads encoders → /joint_states
     diff_drive_controller:
-      type: diff_drive_controller/DiffDriveController
+      type: diff_drive_controller/DiffDriveController      # converts velocity commands → wheel speeds
 
 diff_drive_controller:
   ros__parameters:
-    left_wheel_names:  ["left_wheel_joint"]
-    right_wheel_names: ["right_wheel_joint"]
+    # ── Wheel joint names (must match the joint names in warehouse_robot.urdf.xacro) ──
+    left_wheel_names:  ["left_wheel_joint"]   # name of the left drive wheel joint
+    right_wheel_names: ["right_wheel_joint"]  # name of the right drive wheel joint
 
-    wheel_separation: 0.52
-    wheel_radius: 0.10
+    # ── Physical dimensions — MUST match the URDF xacro properties ─────────
+    # If these values differ from the URDF, odometry will be wrong and the
+    # robot will navigate to incorrect positions.
+    wheel_separation: 0.52  # distance between drive wheel centres in metres (URDF: wheel_sep = 0.52)
+    wheel_radius: 0.10      # drive wheel radius in metres (URDF: wheel_radius = 0.10)
 
-    wheel_separation_multiplier: 1.0
-    left_wheel_radius_multiplier: 1.0
-    right_wheel_radius_multiplier: 1.0
+    # ── Calibration multipliers (1.0 = perfect; tune on a real robot if needed) ──
+    wheel_separation_multiplier: 1.0    # scale factor for wheel separation (compensates mechanical inaccuracy)
+    left_wheel_radius_multiplier: 1.0   # scale factor for left wheel size (compensates wear)
+    right_wheel_radius_multiplier: 1.0  # scale factor for right wheel size (compensates wear)
 
-    publish_rate: 50.0
-    odom_frame_id: odom
-    base_frame_id: base_footprint
-    pose_covariance_diagonal: [0.001, 0.001, 0.001, 0.001, 0.001, 0.01]
+    # ── Odometry publishing ─────────────────────────────────────────────────
+    publish_rate: 50.0            # how often (Hz) /diff_drive_controller/odom is published
+    odom_frame_id: odom           # parent frame of the odometry message
+    base_frame_id: base_footprint # child frame (the robot body)
+
+    # Diagonal covariance values for the pose/twist in the odometry message.
+    # Low values = high confidence (appropriate for simulation with no wheel slip).
+    pose_covariance_diagonal:  [0.001, 0.001, 0.001, 0.001, 0.001, 0.01]
     twist_covariance_diagonal: [0.001, 0.001, 0.001, 0.001, 0.001, 0.01]
 
-    open_loop: false
-    enable_odom_tf: true
-    cmd_vel_timeout: 0.5
-    publish_limited_velocity: true
-    use_stamped_vel: false
+    open_loop: false              # use encoder feedback (closed-loop), not dead-reckoning from commands
+    enable_odom_tf: true          # publish odom → base_footprint TF (EKF will override this with a better estimate)
+    cmd_vel_timeout: 0.5          # stop the robot if no velocity command arrives within 0.5 seconds (safety)
+    publish_limited_velocity: true # publish the actual clamped velocity so downstream nodes can read it
+    use_stamped_vel: false         # accept TwistStamped input (twist_stamper in sim.launch.py handles the conversion)
 
+    # ── Linear velocity and acceleration limits ─────────────────────────────
     linear:
       x:
         has_velocity_limits: true
-        max_velocity: 0.8
-        min_velocity: -0.8
+        max_velocity:  0.8   # maximum forward speed in m/s
+        min_velocity: -0.8   # maximum reverse speed in m/s (negative = backward)
         has_acceleration_limits: true
-        max_acceleration: 2.5
-        max_deceleration: -2.5
+        max_acceleration:  2.5  # maximum speed-up rate in m/s²
+        max_deceleration: -2.5  # maximum braking rate in m/s² (negative = deceleration)
 
+    # ── Angular velocity and acceleration limits ────────────────────────────
     angular:
       z:
         has_velocity_limits: true
-        max_velocity: 2.0
-        min_velocity: -2.0
+        max_velocity:  2.0   # maximum turning speed in rad/s (~115°/s)
+        min_velocity: -2.0   # maximum turning speed in the opposite direction
         has_acceleration_limits: true
-        max_acceleration: 3.2
-        max_deceleration: -3.2
+        max_acceleration:  3.2  # maximum angular acceleration in rad/s²
+        max_deceleration: -3.2  # maximum angular deceleration in rad/s²
