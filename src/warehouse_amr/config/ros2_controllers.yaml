@@ -52,7 +52,7 @@ diff_drive_controller:
     enable_odom_tf: true          # publish odom → base_footprint TF (EKF will override this with a better estimate)
     cmd_vel_timeout: 0.5          # stop the robot if no velocity command arrives within 0.5 seconds (safety)
     publish_limited_velocity: true # publish the actual clamped velocity so downstream nodes can read it
-    use_stamped_vel: false         # accept TwistStamped input (twist_stamper in sim.launch.py handles the conversion)
+    use_stamped_vel: true        # accept TwistStamped input (twist_stamper in sim.launch.py handles the conversion)
 
     # ── Linear velocity and acceleration limits ─────────────────────────────
     linear:
