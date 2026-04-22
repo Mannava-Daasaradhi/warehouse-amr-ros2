@@ -812,9 +812,20 @@ The project is already a solid reference implementation. To cross from "good stu
 - [ ] N/A — Paper or blog post link (not published research, though a blog post would be a great addition)
 
 ---
+📋 Progress Tracking Paragraph
+(Update this paragraph each time a change from the roadmap above is completed.)
+Session 1 (2026-04-22) — Initial analysis + first bug fix applied.
+Full analysis document produced. The repository was cloned, every file read, and the following issues identified: (1) use_stamped_vel: false bug in ros2_controllers.yaml, (2) missing LICENSE file, (3) placeholder maintainer in package.xml, (4) launch_log.txt committed with absolute paths, (5) unused FindPackageShare import in sim.launch.py, (6) twist_stamper and ros2-controllers missing from package.xml exec_depends, (7) no tests, CI, Docker, or demo visuals.
+Change 1 — DONE ✅ src/warehouse_amr/config/ros2_controllers.yaml, line 55: changed use_stamped_vel: false → use_stamped_vel: true. The comment on that line already described the correct behaviour ("accept TwistStamped input — twist_stamper handles the conversion") but the value was wrong. Without this fix, the diff_drive_controller on ROS 2 Jazzy / ros2_controllers 4.x silently rejects the TwistStamped messages from twist_stamper and the robot never moves despite Nav2 computing paths.
+Remaining Phase 1 items (all < 5 min each):
 
-## 📋 Progress Tracking Paragraph
+src/warehouse_amr/package.xml — fix placeholder maintainer name/email; add twist_stamper and ros2-controllers exec_depends
+LICENSE — create Apache 2.0 file in repo root
+launch_log.txt — delete from repo; add to .gitignore
+src/warehouse_amr/launch/sim.launch.py — remove unused FindPackageShare import
 
 *(Update this paragraph each time a change from the roadmap above is completed.)*
 
 **Session 1 (2026-04-22) — Initial analysis only.** No code changes made yet. Full analysis document produced. The repository was cloned, every file read, and the following issues identified: (1) `use_stamped_vel: false` bug in ros2_controllers.yaml, (2) missing LICENSE file, (3) placeholder maintainer in package.xml, (4) `launch_log.txt` committed with absolute paths, (5) unused `FindPackageShare` import in sim.launch.py, (6) `twist_stamper` and `ros2-controllers` missing from package.xml exec_depends, (7) no tests, CI, Docker, or demo visuals. The suggested fix order is Phase 1 → Phase 2 → Phase 3 as documented in Section 5 above.
+
+Change 2 — DONE ✅ src/warehouse_amr/package.xml: (a) fixed placeholder maintainer — changed Your Name / you@email.com to Mannava Daasaradhi / daasaradhimannava@email.com; (b) added <exec_depend>twist_stamper</exec_depend> — was used in sim.launch.py but missing, so rosdep install --from-paths src would skip it on a clean machine; (c) added <exec_depend>ros2_controllers</exec_depend> — same reason, needed for diff_drive_controller spawner.
