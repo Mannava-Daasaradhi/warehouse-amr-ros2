@@ -4,7 +4,7 @@
   <name>warehouse_amr</name>
   <version>0.1.0</version>
   <description>Warehouse AMR — Gazebo, SLAM, Nav2, EKF, diff-drive</description>
-  <maintainer email="daasaradhimannava@email.com">Your Name</maintainer>
+  <maintainer email="daasaradhimannava@email.com">Mannava Daasaradhi</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
