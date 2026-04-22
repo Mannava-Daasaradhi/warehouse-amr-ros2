@@ -5,3 +5,4 @@ log/
 __pycache__/
 *.egg-info/
 .colcon_install_layout
+launch_log.txt
