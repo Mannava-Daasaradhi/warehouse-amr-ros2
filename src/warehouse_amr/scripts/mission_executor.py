@@ -114,22 +114,22 @@ class MissionExecutorNode(Node):
     Follows professor's Node pattern: declare params → init pubs → create timer.
     """
 
-    # Tuning constants — could also be ROS params
-    NAV_TIMEOUT_S      = 120.0              # maximum seconds to wait for any single navigation step
-    FEEDBACK_INTERVAL  = 5.0               # how often (seconds) to log distance-remaining / ETA
 
     def __init__(self) -> None:
         super().__init__('warehouse_mission_executor')  # register this node with ROS 2 under that name
-
+        
         # ── Parameters (professor's declare_parameter style) ──────────────
         self.declare_parameter('mission_sequence',   value=['A1', 'B2', 'DOCK'])  # ordered list of waypoint names to visit
         self.declare_parameter('auto_return_to_dock', True)                        # if True, append a DOCK step when the sequence doesn't already end there
-        self.declare_parameter('map_frame',          'map')                        # TF frame used as the goal's reference frame
+        self.declare_parameter('map_frame',          'map') 
+        self.declare_parameter('nav_timeout_s',      120.0)                        # maximum seconds to wait for any single navigation step
+        self.declare_parameter('feedback_interval_s', 5.0)                        # how often (seconds) to log distance-remaining / ETA
 
         self._sequence  = self.get_parameter('mission_sequence').get_parameter_value().string_array_value   # read and store the waypoint sequence
         self._auto_dock = self.get_parameter('auto_return_to_dock').get_parameter_value().bool_value        # read and store the auto-dock flag
         self._frame     = self.get_parameter('map_frame').get_parameter_value().string_value                # read and store the map frame name
-
+        self.NAV_TIMEOUT_S     = self.get_parameter('nav_timeout_s').get_parameter_value().double_value     # read tunable timeout
+        self.FEEDBACK_INTERVAL = self.get_parameter('feedback_interval_s').get_parameter_value().double_value  # read tunable feedback interval
         # ── Publisher (professor's create_publisher pattern) ───────────────
         self._status_pub = self.create_publisher(String, '/amr/mission_status', 10)  # publishes status strings after each step; queue depth = 10
 

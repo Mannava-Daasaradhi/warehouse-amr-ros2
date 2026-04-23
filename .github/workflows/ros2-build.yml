@@ -1,0 +1,56 @@
+name: ROS 2 Build & Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up ROS 2 Jazzy
+        uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: jazzy
+
+      - name: Install apt dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ros-jazzy-nav2-bringup \
+            ros-jazzy-nav2-simple-commander \
+            ros-jazzy-slam-toolbox \
+            ros-jazzy-robot-localization \
+            ros-jazzy-ros-gz-sim \
+            ros-jazzy-ros-gz-bridge \
+            ros-jazzy-gz-ros2-control \
+            ros-jazzy-twist-stamper \
+            ros-jazzy-ros2-controllers \
+            ros-jazzy-xacro \
+            ros-jazzy-ament-cmake-pytest \
+            python3-pytest
+
+      - name: Create workspace
+        run: |
+          mkdir -p ~/ros2_ws/src
+          cp -r $GITHUB_WORKSPACE ~/ros2_ws/src/warehouse_amr
+
+      - name: Build
+        run: |
+          cd ~/ros2_ws
+          source /opt/ros/jazzy/setup.bash
+          colcon build --packages-select warehouse_amr --symlink-install
+
+      - name: Test
+        run: |
+          cd ~/ros2_ws
+          source /opt/ros/jazzy/setup.bash
+          source install/setup.bash
+          colcon test --packages-select warehouse_amr
+          colcon test-result --verbose

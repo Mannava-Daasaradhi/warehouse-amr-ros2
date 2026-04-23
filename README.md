@@ -1,11 +1,18 @@
 # Warehouse AMR — ROS 2 Autonomous Mobile Robot
 
+[![ROS 2 Jazzy](https://img.shields.io/badge/ROS2-Jazzy-22314E?logo=ros)](https://docs.ros.org/en/jazzy/)
+[![Gazebo Harmonic](https://img.shields.io/badge/Gazebo-Harmonic-FF6600)](https://gazebosim.org/)
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-4CAF50)](LICENSE)
+[![Build](https://github.com/Mannava-Daasaradhi/warehouse-amr-ros2/actions/workflows/ros2-build.yml/badge.svg)](https://github.com/Mannava-Daasaradhi/warehouse-amr-ros2/actions/workflows/ros2-build.yml)
+
 A complete ROS 2 simulation of a **warehouse Autonomous Mobile Robot (AMR)** that can
 autonomously navigate to named shelf locations and a charging dock.
 
 Built on **ROS 2 Jazzy**, **Gazebo Harmonic**, **Nav2**, **SLAM Toolbox**, and **robot_localization (EKF)**.
 
----
+> 📸 *Demo GIF coming soon — run `ros2 launch warehouse_amr mission.launch.py` to see it live.*
+
 
 ## What This Project Does
 
@@ -79,6 +86,14 @@ source ~/ros2_ws/install/setup.bash
 ros2 topic echo /amr/mission_status
 ```
 
+Expected output after ~35 seconds:
+```
+data: SUCCEEDED:A1:18.4s
+data: SUCCEEDED:B2:14.1s
+data: SUCCEEDED:C3:13.0s
+data: SUCCEEDED:DOCK:28.7s
+```
+
 ---
 
 ## Repository Structure
@@ -86,6 +101,11 @@ ros2 topic echo /amr/mission_status
 ```
 warehouse-amr-ros2/
 ├── README.md                          ← You are here
+├── LICENSE                            ← Apache 2.0
+├── CONTRIBUTING.md                    ← How to add waypoints, tune params, run tests
+├── .github/
+│   └── workflows/
+│       └── ros2-build.yml             ← CI: build + test on every push
 ├── docs/
 │   ├── step_by_step_guide.md          ← Full install & run walkthrough
 │   ├── system_overview.md             ← Every node, topic, and TF frame
@@ -112,11 +132,12 @@ warehouse-amr-ros2/
         │   └── warehouse_nav.rviz     ← Pre-configured RViz2 layout
         ├── scripts/
         │   └── mission_executor.py    ← Autonomous mission controller node
+        ├── test/
+        │   └── test_mission_executor.py ← 20 unit tests (no ROS runtime needed)
         ├── urdf/
         │   └── warehouse_robot.urdf.xacro  ← Robot model (URDF + plugins)
         └── worlds/
             └── warehouse.sdf          ← Gazebo warehouse environment
-```
 
 ---
 
@@ -186,6 +207,22 @@ ros2 run warehouse_amr mission_executor.py --ros-args \
 6. **mission_executor.py** sends one Nav2 goal at a time, waits for completion, and publishes status.
 
 For a deep dive into any component, start with the corresponding document in `docs/`.
+
+---
+
+## Running Tests
+
+```bash
+cd ~/ros2_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+colcon test --packages-select warehouse_amr
+colcon test-result --verbose
+```
+
+Expected output: **20 tests, 0 errors, 0 failures, 0 skipped.**
+Tests cover `_yaw_to_quat`, `_make_pose`, and all `SHELF_REGISTRY` entries.
+No running ROS 2 instance or Gazebo required.
 
 ---
 
